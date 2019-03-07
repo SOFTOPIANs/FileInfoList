@@ -1,4 +1,4 @@
-# File Infomation Listing Tool v0.2.1 (20190307)
+# File Infomation Listing Tool v0.2.2 (20190307)
 
 ### required opam package
 
