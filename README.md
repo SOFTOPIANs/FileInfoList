@@ -1,4 +1,4 @@
-# FileInfoList v0.2
+# FileInfoList v0.2.1 (20190307)
 
 ### required opam package
 
