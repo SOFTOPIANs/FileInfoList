@@ -104,7 +104,7 @@ module FileInfo = struct
         | ".timestamp" | ".ii" | ".inc" | ".conf" | ".7" | ".dict" | ".regex"
         | ".system" | ".extra" | ".list" | ".ignore" | ".clang-tidy"
         | ".plist" | ".tmLanguage" | ".supp" | ".grm" | ".x86_64" | ".i386"
-        | ".macho" ->
+        | ".macho" | ".lst" ->
           "Misc file"
         | ".scpt" | ".dia" | ".lib" | ".v3" | ".v1" | ".v2" | ".idx"
         | ".hmap" | ".bin" | ".exe" ->
@@ -119,6 +119,9 @@ module FileInfo = struct
         | ".dll" -> "Dynamic Library file"
         | ".pbd" -> "PBD file"
         | ".obj" -> "Object file"
+        | ".licx" -> "License file"
+        | ".resources" -> "Image resource file"
+        | ".template" -> "Assembly Info. template file"
         | "" ->
           begin
             match base with
@@ -231,9 +234,10 @@ let anon_fun fd =
 
 let major = "0"
 let minor = "2"
+let misc = "1"
 
 let version =
-  major ^ "." ^ minor
+  major ^ "." ^ minor ^ "." ^ misc
 
 let usage_msg =
   "FILT Ver." ^ version ^ "\n" ^
