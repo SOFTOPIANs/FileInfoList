@@ -14,8 +14,12 @@
  
 ### How to run
 
- - `./main.byte -t <dir_name>` : search every files in <dir_name>, listing files of unknown extension (categorized by extension).
- - `./main.byte <dir_name>` : search every files in <dir_name>, listring informations of files.
+ - `./main.{byte|native} -t <dir_name>` : search every files in <dir_name>, listing files of unknown extension (categorized by extension).
+ - `./main.{byte|native} <dir_name>` : search every files in <dir_name>, listring informations of files.
+
+### Addtional options
+
+ - `./main.{byte|native} ... -f <output_file>` : print out to <output_file>. (default : stdout)
 
 ### TODO
 
