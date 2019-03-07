@@ -1,0 +1,17 @@
+OASISFormat : 0.4
+Name        : File Info. Listing Tool
+Version     : 0.01
+Authors     : Hyunha Kim <lagrato@gmail.com>
+License     : LGPL with OCaml linking exception
+Plugins     : DevFiles (0.4)
+Synopsis    : FILT
+Description : FILT
+
+BuildTools   : ocamlbuild
+BuildDepends :
+  menhirLib, unix
+
+Executable "filt"
+  Path: src
+  BuildDepends :
+  MainIs: main.ml
