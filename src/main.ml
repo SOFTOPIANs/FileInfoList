@@ -219,8 +219,11 @@ module FileInfo = struct
     in
     { path; base; checksum; line; tm; size; typ }
 
-  let pp fmt t =
-    fpf fmt "%s/%s\t" t.path t.base;
+  let pp ?(nopath=false) fmt t =
+    if nopath then
+      fpf fmt "%s\t" t.base
+    else
+      fpf fmt "%s/%s\t" t.path t.base;
     fpf fmt "%d\t%s\t" t.size (String.sub t.checksum 0 8);
     fpf fmt "%d.%0.d.%0.d\t%d\t%s" 
       (t.tm.Unix.tm_year + 1900)
@@ -229,35 +232,61 @@ module FileInfo = struct
       t.line t.typ
 end
 module FileInfos = Set.Make(FileInfo)
+module FileInfoMap = struct
+  include Map.Make(String)
 
-let test_dir = ref None
+  open FileInfo
+
+  let add fi m =
+    let fis =
+      if mem fi.path m then
+        find fi.path m
+      else
+        FileInfos.empty
+    in
+    let fis = FileInfos.add fi fis in
+    add fi.path fis m
+end
+
+let target_dir = ref None
 
 let anon_fun fd =
-  if Sys.is_directory fd || Sys.file_exists fd then
-    test_dir := Some fd
+  if Sys.is_directory fd then
+    begin
+      let last = String.get fd (String.length fd - 1) |> Char.escaped in
+      if last = Filename.dir_sep then
+        target_dir := Some (String.sub fd 0 (String.length fd - 1))
+      else
+        target_dir := Some fd
+    end
+  else if Sys.file_exists fd then
+    target_dir := Some fd
   else
     fprintf err_formatter "[ERROR] %s is not directory@." fd
 
 let major = "0"
-let minor = "2"
-let misc = "2"
+let minor = "3"
+let misc = "0"
 
 let version =
   major ^ "." ^ minor ^ "." ^ misc
 
 let usage_msg =
   "FILT Ver." ^ version ^ "\n" ^
-  "main.byte <options> <test_dir>"
+  "main.byte <options> <target_dir>"
 
 let ext_check = ref false
+let categorizing = ref false
+
 let out_fmt = ref None
 let set_out f =
   out_fmt := Some (open_out f)
 
 let specs = [
-  "-v", Arg.Set verbose,    "    set verbose.";
-  "-f", Arg.String set_out, "    print out to a file.";
-  "-t", Arg.Set ext_check,  "    test extensions"; 
+  "-v", Arg.Set verbose,        "    set verbose.";
+  "-f", Arg.String set_out,     "    print out to a file.";
+  "-t", Arg.Set ext_check,      "    test extensions"; 
+  "-c", Arg.Set categorizing,   "    print out (categorized by directory)";
 ]
 
 let is_valid_extensions ?(safe=true) fd =
@@ -333,9 +362,10 @@ end
 open Util
 
 let run () =
-  match !test_dir with
+  match !target_dir with
   | None -> ()
   | Some start_point ->
+    fprintf std_formatter "target dir : %s@." start_point;
     if !ext_check then
       begin
         begin
@@ -376,14 +406,28 @@ let run () =
           | Some chnl -> Format.formatter_of_out_channel chnl
         in
         if num_of_files > 0 then
-          begin
-            fprintf fmt "* list of [%d] file(s) in %s --- @." num_of_files start_point;
-            FileInfos.fold (fun f i ->
-              fprintf fmt "[%d] %a@." i FileInfo.pp f;
-              i + 1
-            ) files 1 |> ignore;
-            fprintf fmt "----------------- end of files * @.";
-          end
+          if !categorizing then
+            begin
+              fprintf fmt "* list of file(s) in %s --- @." start_point;
+              FileInfos.fold FileInfoMap.add files FileInfoMap.empty |>
+              FileInfoMap.iter (fun path fis ->
+                fprintf fmt "[%s]@." path;
+                FileInfos.fold (fun f i ->
+                  fprintf fmt "\t[%d] %a@." i (FileInfo.pp ~nopath:true) f;
+                  i + 1
+                ) fis 1 |> ignore
+              );
+              fprintf fmt "------------------------------------ end of list * @."
+            end
+          else
+            begin
+              fprintf fmt "* list of [%d] file(s) in %s --- @." num_of_files start_point;
+              FileInfos.fold (fun f i ->
+                fprintf fmt "[%d] %a@." i (FileInfo.pp ~nopath:false) f;
+                i + 1
+              ) files 1 |> ignore;
+              fprintf fmt "----------------- end of files * @."
+            end
         else
           begin
             fprintf fmt "* no target files in %s@." start_point;
