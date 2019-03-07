@@ -16,3 +16,8 @@
 
  - `./main.byte -t <dir_name>` : search every files in <dir_name>, listing files of unknown extension (categorized by extension).
  - `./main.byte <dir_name>` : search every files in <dir_name>, listring informations of files.
+
+### TODO
+
+ - move hard-coded file type list to external file
+ - fix bugs
