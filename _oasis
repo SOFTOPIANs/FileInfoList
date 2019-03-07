@@ -8,10 +8,10 @@ Synopsis    : FILT
 Description : FILT
 
 BuildTools   : ocamlbuild
-BuildDepends :
-  menhirLib, unix
+BuildDepends : unix
 
 Executable "filt"
   Path: src
   BuildDepends :
+  CompiledObject: best
   MainIs: main.ml
