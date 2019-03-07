@@ -122,6 +122,12 @@ module FileInfo = struct
         | ".licx" -> "License file"
         | ".resources" -> "Image resource file"
         | ".template" -> "Assembly Info. template file"
+        | ".properties" -> "Java configure file"
+        | ".svg" -> "Scalable Vector Graphics image file"
+        | ".ttf" -> "TrueType Font"
+        | ".woff" -> "Web Open Font Format"
+        | ".woff2" -> "Web Open Font Format version 2"
+        | ".java" -> "Java source file"
         | "" ->
           begin
             match base with
@@ -234,7 +240,7 @@ let anon_fun fd =
 
 let major = "0"
 let minor = "2"
-let misc = "1"
+let misc = "2"
 
 let version =
   major ^ "." ^ minor ^ "." ^ misc
