@@ -1,4 +1,4 @@
-# File Infomation Listing Tool v0.2.2 (20190307)
+# File Infomation Listing Tool v0.3.0 (20190307)
 
 ### required opam package
 
@@ -20,6 +20,7 @@
 ### Addtional options
 
  - `./main.{byte|native} ... -f <output_file>` : print out to <output_file>. (default : stdout)
+ - `./main.{byte|native} ... -c <output_file>` : print out (categorized by directory, not for -t mode)
 
 ### TODO
 
