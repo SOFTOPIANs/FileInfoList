@@ -2,6 +2,7 @@
 
 ### required opam package
 
+ - OCaml version >= 4.04
  - oasis
  
 ### How to build
