@@ -22,11 +22,17 @@ end
 
 let verbose = ref false
 let has_error_case = ref false
+let html = ref true
 
 module Line = struct
   type t = int
   let compare = Pervasives.compare
 end
+
+module StrMap = Map.Make(String)
+
+let m1 = ref StrMap.empty
+let m2 = ref StrMap.empty
 
 exception NotSupported of string
 exception Failed of string * int
@@ -52,9 +58,26 @@ module FileInfo = struct
     | n -> n
 
   let get_type base ext =
+    let ext = String.lowercase_ascii ext in
+    if ext = "" then
+      let base = String.lowercase_ascii base in
+      match StrMap.find_opt base !m2 with
+      | Some v -> if !html then Known v else Known ("\'" ^ v ^ "\'")
+      | None ->
+        UnkE
+        (* raise (UnknownExt (base, ext)) *)
+    else
+      match StrMap.find_opt ext !m1 with
+      | Some v -> if !html then Known v else Known ("\'" ^ v ^ "\'")
+      | None ->
+        UnkF
+        (* raise (UnknownFile base) *)
+
+  let get_type_raw base ext =
     try
+      let ext = String.lowercase_ascii ext in
       let msg =
-        match String.lowercase_ascii ext with
+        match ext with
         | ".c" | ".model" -> "C source file"
         | ".cpp" | ".cc" | "cxx" -> "C++ source file"
         | ".mm" | ".m" -> "Objective-C source file"
@@ -214,7 +237,10 @@ module FileInfo = struct
     let ext = Filename.extension filename in
     let typ =
       match get_type base ext with
-      | UnkE | UnkF -> if safe then "Misc File" else raise (UnknownFile filename)
+      | UnkE | UnkF ->
+        if safe then
+          if !html then "Misc file" else "'Misc file'"
+        else raise (UnknownFile filename)
       | Known typ -> typ
     in
     { path; base; checksum; line; tm; size; typ }
@@ -230,6 +256,17 @@ module FileInfo = struct
       (t.tm.Unix.tm_mon + 1) 
       t.tm.Unix.tm_mday
       t.line t.typ
+
+  let pp_html i fmt t =
+    fpf fmt "      <TD>%d</TD>@." i;
+    fpf fmt "      <TD>%s</TD>@." t.base;
+    fpf fmt "      <TD>1.0</TD>@.";
+    fpf fmt "      <TD>%d</TD>@." t.size;
+    fpf fmt "      <TD>%s</TD>@." (String.sub t.checksum 0 8);
+    fpf fmt "      <TD>%d.%0.d.%0.d</TD>@."
+      (t.tm.Unix.tm_year + 1900) (t.tm.Unix.tm_mon + 1) t.tm.Unix.tm_mday;
+    fpf fmt "      <TD>%d</TD>@." t.line;
+    fpf fmt "      <TD>%s</TD>@." t.typ
 end
 module FileInfos = Set.Make(FileInfo)
 module FileInfoMap = struct
@@ -262,10 +299,10 @@ let anon_fun fd =
   else if Sys.file_exists fd then
     target_dir := Some fd
   else
-    fprintf err_formatter "[ERROR] %s is not directory@." fd
+    fpf err_formatter "[ERROR] %s is not directory@." fd
 
 let major = "0"
-let minor = "3"
+let minor = "4"
 let misc = "0"
 
 let version =
@@ -287,6 +324,7 @@ let specs = [
   "-f", Arg.String set_out,     "    print out to a file.";
   "-t", Arg.Set ext_check,      "    test extensions"; 
   "-c", Arg.Set categorizing,   "    print out (categorized by directory)";
+  "-h", Arg.Set html,           "    print out in HTML format";
 ]
 
 let is_valid_extensions ?(safe=true) fd =
@@ -308,17 +346,17 @@ module Util = struct
     else if Sys.file_exists fd then
       if is_valid_extensions ~safe:false fd |> not then
         begin
-          if !verbose then fprintf err_formatter "[ADD][F] %s@." fd;
+          if !verbose then fpf err_formatter "[ADD][F] %s@." fd;
           FileExtMap.add fd files
         end
       else
         begin
-          if !verbose then fprintf err_formatter "[IGNORE] %s@." fd;
+          if !verbose then fpf err_formatter "[IGNORE] %s@." fd;
           files
         end
     else
       begin
-        if !verbose then fprintf err_formatter "%s is not exists@." fd;
+        if !verbose then fpf err_formatter "%s is not exists@." fd;
         files
       end
 
@@ -333,17 +371,17 @@ module Util = struct
     else if Sys.file_exists fd then
       if is_valid_extensions fd then
         begin
-          if !verbose then fprintf err_formatter "[ADD][F] %s@." fd;
+          if !verbose then fpf err_formatter "[ADD][F] %s@." fd;
           FileInfos.add (FileInfo.gen fd) files
         end
       else
         begin
-          if !verbose then fprintf err_formatter "[IGNORE] %s@." fd;
+          if !verbose then fpf err_formatter "[IGNORE] %s@." fd;
           files
         end
     else
       begin
-        if !verbose then fprintf err_formatter "%s is not exists@." fd;
+        if !verbose then fpf err_formatter "%s is not exists@." fd;
         files
       end
 
@@ -365,7 +403,30 @@ let run () =
   match !target_dir with
   | None -> ()
   | Some start_point ->
-    fprintf std_formatter "target dir : %s@." start_point;
+    fpf std_formatter "target dir : %s@." start_point;
+    let f = "fileinfo.db" in
+    fpf std_formatter "load file info. from %s@." f;
+    let fileinfo =
+      try
+        let chnl = open_in f in
+        let lexbuf = Lexing.from_channel chnl in
+        let r = Parser.ss Lexer.token lexbuf in
+        close_in chnl; r
+      with
+      | exn ->
+        fpf err_formatter "error at line %i@." !Lexer.line;
+        raise exn
+    in
+    let _m1, _m2 =
+      List.fold_left (fun (m1, m2) (ext, v, b) ->
+        let ext = String.lowercase_ascii ext in
+        if b then
+          StrMap.add ext v m1, m2
+        else
+          m1, StrMap.add ext v m2
+      ) (StrMap.empty, StrMap.empty) fileinfo
+    in
+    m1 := _m1; m2 := _m2;
     if !ext_check then
       begin
         begin
@@ -377,19 +438,19 @@ let run () =
         in
         if FileExtMap.is_empty files |> not then
           begin
-            fprintf fmt "* list of file(s) with unknown type in %s --- @." start_point;
+            fpf fmt "* list of file(s) with unknown type in %s --- @." start_point;
             FileExtMap.iter (fun ext fs ->
-              fprintf fmt "[EXT = '%s']@." ext;
+              fpf fmt "[EXT = '%s']@." ext;
               Files.fold (fun f i ->
-                fprintf fmt "\t[%d] %s@." i f;
+                fpf fmt "\t[%d] %s@." i f;
                 i + 1
               ) fs 1 |> ignore;
             ) files;
-            fprintf fmt "------------------------------------ end of list * @.";
+            fpf fmt "------------------------------------ end of list * @.";
           end
         else
           begin
-            fprintf fmt "* no unknown files in %s@." start_point;
+            fpf fmt "* no unknown files in %s@." start_point;
           end;
         match !out_fmt with
         | Some chnl -> close_out chnl
@@ -406,31 +467,66 @@ let run () =
           | Some chnl -> Format.formatter_of_out_channel chnl
         in
         if num_of_files > 0 then
-          if !categorizing then
+          if !html then
             begin
-              fprintf fmt "* list of file(s) in %s --- @." start_point;
+              fpf fmt "<!DOCTYPE html>@.";  
+              fpf fmt "<HTML>@.";
+              fpf fmt "  <HEAD>@.";
+              fpf fmt "    <META charset='UTF-8'>@.";
+              fpf fmt "  </HEAD>@.";
+              fpf fmt "  <BODY>@.";
+              fpf fmt "    <TABLE border='1'>@.";
+              fpf fmt "      <TR>@.";
+              fpf fmt "        <TH>순번</TH>@.";
+              fpf fmt "        <TH>파일명</TH>@.";
+              fpf fmt "        <TH>버전</TH>@.";
+              fpf fmt "        <TH>크기</TH>@.";
+              fpf fmt "        <TH>첵섬</TH>@.";
+              fpf fmt "        <TH>생성일자</TH>@.";
+              fpf fmt "        <TH>라인수</TH>@.";
+              fpf fmt "        <TH>기능 설명</TH>@.";
+              fpf fmt "      </TR>@.";
               FileInfos.fold FileInfoMap.add files FileInfoMap.empty |>
               FileInfoMap.iter (fun path fis ->
-                fprintf fmt "[%s]@." path;
+                fpf fmt "      <TR>@.";
+                fpf fmt "        <TD colspan='8'> 저장위치 : %s</TD>@." path;
+                fpf fmt "      </TR>@.";
                 FileInfos.fold (fun f i ->
-                  fprintf fmt "\t[%d] %a@." i (FileInfo.pp ~nopath:true) f;
+                  fpf fmt "      <TR>@.";
+                  FileInfo.pp_html i fmt f;
+                  fpf fmt "      </TR>@.";
                   i + 1
                 ) fis 1 |> ignore
               );
-              fprintf fmt "------------------------------------ end of list * @."
+              fpf fmt "    </TABLE>@.";
+              fpf fmt "  </BODY>@.";
+              fpf fmt "</HTML>@."
+            end
+          else if !categorizing then
+            begin
+              fpf fmt "* list of file(s) in %s --- @." start_point;
+              FileInfos.fold FileInfoMap.add files FileInfoMap.empty |>
+              FileInfoMap.iter (fun path fis ->
+                fpf fmt "[%s]@." path;
+                FileInfos.fold (fun f i ->
+                  fpf fmt "\t[%d] %a@." i (FileInfo.pp ~nopath:true) f;
+                  i + 1
+                ) fis 1 |> ignore
+              );
+              fpf fmt "------------------------------------ end of list * @."
             end
           else
             begin
-              fprintf fmt "* list of [%d] file(s) in %s --- @." num_of_files start_point;
+              fpf fmt "* list of [%d] file(s) in %s --- @." num_of_files start_point;
               FileInfos.fold (fun f i ->
-                fprintf fmt "[%d] %a@." i (FileInfo.pp ~nopath:false) f;
+                fpf fmt "[%d] %a@." i (FileInfo.pp ~nopath:false) f;
                 i + 1
               ) files 1 |> ignore;
-              fprintf fmt "----------------- end of files * @."
+              fpf fmt "----------------- end of files * @."
             end
         else
           begin
-            fprintf fmt "* no target files in %s@." start_point;
+            fpf fmt "* no target files in %s@." start_point;
           end;
         match !out_fmt with
         | Some chnl -> close_out chnl
