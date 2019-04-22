@@ -1,3 +1,5 @@
+".native" = "OCaml binary file"
+".byte" = "OCaml binary file"
 ".c" = "C source file"
 ".model" = "C source file"
 ".cpp" = "C++ source file"

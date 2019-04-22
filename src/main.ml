@@ -1,11 +1,25 @@
 open Format
 
 let (|>) a f = f a
-let fpf = Format.fprintf
+let fpf = fprintf
+let efmt = err_formatter
 
 module File = String
+module Filename = struct
+  include Filename
+
+  let root = ref None
+  let fdesc = ref (Some "\\\\")
+  let dir_sep_origin = dir_sep
+
+  let dir_sep() =
+    match !fdesc with
+    | None -> dir_sep_origin
+    | Some s -> s
+end
 
 module Ext = String
+exception IGNORE
 
 module Files = Set.Make(File)
 module FileExtMap = struct
@@ -24,15 +38,55 @@ let verbose = ref false
 let has_error_case = ref false
 let html = ref true
 
+let set_root s =
+    Filename.root := Some s
+
+let set_slash s =
+    Filename.fdesc := (
+      function
+      | "" -> None
+      | s -> Some s
+    ) s
+
+let patch_slash (s:string) : string =
+  let s =
+    Str.global_replace
+      (Str.regexp (Filename.dir_sep_origin ^ Filename.dir_sep_origin))
+    Filename.dir_sep_origin s
+  in
+  Str.global_replace (Str.regexp Filename.dir_sep_origin)
+    (Filename.dir_sep()) s
+
+let patch_path (path:string) : string =
+  match !Filename.root with
+  | Some v ->
+    let path =
+      if String.length path > 1 && 
+        String.sub path 0 2 = ("." ^ Filename.dir_sep_origin) then
+        String.sub path 2 (String.length path - 2)
+      else if String.sub path 0 1 = "." then
+        String.sub path 1 (String.length path - 1)
+      else path
+    in
+    let v =
+      if String.sub v 0 1 = Filename.dir_sep_origin then
+        String.sub v 0 (String.length path - 1)
+      else v
+    in
+    v ^ Filename.dir_sep_origin ^ path |> patch_slash
+  | None -> patch_slash path
+
 module Line = struct
   type t = int
   let compare = Pervasives.compare
 end
 
 module StrMap = Map.Make(String)
+module StrSet = Set.Make(String)
 
 let m1 = ref StrMap.empty
 let m2 = ref StrMap.empty
+let s3 = ref StrSet.empty
 
 exception NotSupported of string
 exception Failed of string * int
@@ -59,7 +113,9 @@ module FileInfo = struct
 
   let get_type base ext =
     let ext = String.lowercase_ascii ext in
-    if ext = "" then
+    if StrSet.mem ext !s3 then
+      raise IGNORE
+    else if ext = "" then
       let base = String.lowercase_ascii base in
       match StrMap.find_opt base !m2 with
       | Some v -> if !html then Known v else Known ("\'" ^ v ^ "\'")
@@ -72,134 +128,6 @@ module FileInfo = struct
       | None ->
         UnkF
         (* raise (UnknownFile base) *)
-
-  let get_type_raw base ext =
-    try
-      let ext = String.lowercase_ascii ext in
-      let msg =
-        match ext with
-        | ".c" | ".model" -> "C source file"
-        | ".cpp" | ".cc" | "cxx" -> "C++ source file"
-        | ".mm" | ".m" -> "Objective-C source file"
-        | ".ml" -> "OCaml source file"
-        | ".mli" -> "OCaml interface file"
-        | ".txt" -> "Text File"
-        | ".h" -> "C header file"
-        | ".hpp" -> "C++ header file"
-        | ".md" -> "Markdown file"
-        | ".targets" -> "target files"
-        | ".bat" -> "batch file"
-        | ".td" -> "LLVM target definition file"
-        | ".ll" -> "LLVM IR file"
-        | ".bc" -> "LLVM bitcode file"
-        | ".el" -> "Lisp source file"
-        | ".py" -> "Python source file"
-        | ".sh" -> "shell script file"
-        | ".pl" -> "Perl script file"
-        | ".js" -> "JavaScript source file"
-        | ".css" -> "Hypertext Cascading Style Sheet file"
-        | ".applescript" -> "Apple script file"
-        | ".cs" -> "C# source file"
-        | ".go" -> "Go source file"
-        | ".ico" -> "Icon file"
-        | ".rst" -> "reStructured text file"
-        | ".html" -> "HTML source file"
-        | ".dox" -> "Doxygen file"
-        | ".bmp" | ".png" | ".jpg" | ".jpeg" | ".gif" -> "Image file"
-        | ".resx" -> "ResX Schema file"
-        | ".vsct" -> "Visual Studio command table file"
-        | ".sln" -> "Visual Studio solution file"
-        | ".csproj" -> "C# project file"
-        | ".cu" -> "CUDA source file"
-        | ".json" -> "JSON file"
-        | ".cl" | ".gch" | ".pch" -> "Pre compiled header file"
-        | ".s" -> "assembly file"
-        | ".i" -> "LLVM interpreter file"
-        | ".proftext" -> "LLVM Profdata file"
-        | ".prof" -> "LLVM Profdata file"
-        | ".cmake" | ".guess" -> "CMake files"
-        | ".vim" -> "Vim file"
-        | ".1" | ".in" | ".exports" | ".config" | ".map" | ".modulemap"
-        | ".test" | ".cfg" | ".def" | ".args" | ".f90" 
-        | ".utf16le" | ".f95" | ".9.3" | ".3" | ".bfd" | ".gold"
-        | ".syms" | ".lld-link2" | ".rs" | ".cppm" | ".result" | ".data" 
-        | ".profraw" | ".fixed" | ".h-1" | ".h-0" | ".remap" | ".tbd" | ".build"
-        | ".timestamp" | ".ii" | ".inc" | ".conf" | ".7" | ".dict" | ".regex"
-        | ".system" | ".extra" | ".list" | ".ignore" | ".clang-tidy"
-        | ".plist" | ".tmLanguage" | ".supp" | ".grm" | ".x86_64" | ".i386"
-        | ".macho" | ".lst" ->
-          "Misc file"
-        | ".scpt" | ".dia" | ".lib" | ".v3" | ".v1" | ".v2" | ".idx"
-        | ".hmap" | ".bin" | ".exe" ->
-          "Misc binary file"
-        | ".sphinx" -> "Make file"
-        | ".rule" -> "Equivalence check rule file"
-        | ".xml" -> "XML file"
-        | ".yaml" -> "YAML file"
-        | ".ini" -> "Configuration file"
-        | ".patch" -> "Patch file"
-        | ".cgi" -> "CGI file"
-        | ".dll" -> "Dynamic Library file"
-        | ".pbd" -> "PBD file"
-        | ".obj" -> "Object file"
-        | ".licx" -> "License file"
-        | ".resources" -> "Image resource file"
-        | ".template" -> "Assembly Info. template file"
-        | ".properties" -> "Java configure file"
-        | ".svg" -> "Scalable Vector Graphics image file"
-        | ".ttf" -> "TrueType Font"
-        | ".woff" -> "Web Open Font Format"
-        | ".woff2" -> "Web Open Font Format version 2"
-        | ".java" -> "Java source file"
-        | "" ->
-          begin
-            match base with
-            | "INSTALL" -> "INSTALL file"
-            | ".arcconfig" -> "Arcanist config file"
-            | "git-clang-format" | ".gitignore" | ".keep" | ".DS_Store" 
-            | "gentoo-release" | "config-x86_64-pc-linux-gnu" 
-            | "x86_64-pc-linux-gnu-4.9.3" | "x86_64-unknown-linux-gnu-as"
-            | "x86_64-unknown-linux-gnu-ld" | "mipsel-linux-android-ld"
-            | "aarch64-linux-android-ld" | "arm-linux-androideabi-ld"
-            | "i686-linux-android-ld" | "i386-unknown-linux-gnu-ld"
-            | "i386-unknown-linux-gnu-as" | "armv7-windows-itanium-ld"
-            | "x86_64--linux-as" | "x86_64--linux-ld" | "Module" | "starts_a_scope" 
-            | "passmgr_builder" | "test_file" | "_tags" | "aa" | "ab" | "ba" | "a" 
-            | "aaa" | "aab" | "bbb" | "Linux" | "Posix" ->
-              "Misc file"
-            | "ld" | "prefix-ld" | "i386-unknown-linux-ld" | "as"
-            | "ends_a_scope_only" | "starts_a_scope_only" | "ends_a_scope"
-            | ".clang-format" | "vector" | "modmap" | "DependsOnModule"
-            | "NoUmbrella" | "map" | "streambuf" | "map1" | "map2" | "map3"
-            | "__config" | "type_traits" | "cstddef" | ".system_framework"
-            | "typeinfo" ->
-              "Misc file"
-            | "README" | "readme" | ".LLVM" ->
-              "Text file"
-            | "Dockerfile" -> "Docker file"
-            (* special files without extensions *)
-            | "remapped-file-3" | "remapped-file-2" | "remapped-file" ->
-              "C source file"
-            | "warn-inconsistent-missing-destructor-override" ->
-              "C++ source file"
-            | "scan-build" | "ccc-analyzer" | "c++-analyzer" -> 
-              "Perl script file"
-            | "set-xcode-analyzer" | "scan-view" | "intercept-build" 
-            | "analyze-build" | "intercept-cc" | "intercept-c++"
-            | "analyze-cc" | "analyze-c++" ->
-              "Python source file"
-            | "Makefile" | "makefile" -> "Make file"
-            | "configure" -> "Configure file"
-            | _ ->
-              raise (UnknownFile base)
-          end
-        | _ ->
-          raise (UnknownExt (base, ext))
-      in
-      Known ("\'" ^ msg ^ "\'")
-    with
-    | UnknownFile (f) -> UnkF
-    | UnknownExt (f, ext) -> UnkE
 
   let count_lines_of f =
     (* let lines = ref 0 in 
@@ -291,7 +219,7 @@ let anon_fun fd =
   if Sys.is_directory fd then
     begin
       let last = String.get fd (String.length fd - 1) |> Char.escaped in
-      if last = Filename.dir_sep then
+      if last = Filename.dir_sep_origin then
         target_dir := Some (String.sub fd 0 (String.length fd - 1))
       else
         target_dir := Some fd
@@ -302,7 +230,7 @@ let anon_fun fd =
     fpf err_formatter "[ERROR] %s is not directory@." fd
 
 let major = "0"
-let minor = "4"
+let minor = "5"
 let misc = "0"
 
 let version =
@@ -325,6 +253,8 @@ let specs = [
   "-t", Arg.Set ext_check,      "    test extensions"; 
   "-c", Arg.Set categorizing,   "    print out (categorized by directory)";
   "-h", Arg.Set html,           "    print out in HTML format";
+  "-r", Arg.String set_root,    "    set root dir. of path (for print only)";
+  "-w", Arg.String set_slash,   "    set file descripter";
 ]
 
 let is_valid_extensions ?(safe=true) fd =
@@ -341,7 +271,7 @@ module Util = struct
       Array.fold_left (fun files fd' ->
         match fd' with
         | ".svn" -> files
-        | fd' -> get_ext_files files (fd ^ Filename.dir_sep ^ fd')
+        | fd' -> get_ext_files files (fd ^ Filename.dir_sep_origin ^ fd')
       ) files
     else if Sys.file_exists fd then
       if is_valid_extensions ~safe:false fd |> not then
@@ -364,9 +294,8 @@ module Util = struct
     if Sys.is_directory fd then
       Sys.readdir fd |>
       Array.fold_left (fun files fd' ->
-        match fd' with
-        | ".svn" -> files
-        | fd' -> get_files files (fd ^ Filename.dir_sep ^ fd')
+        if StrSet.mem fd' !s3 then files else
+        get_files files (fd ^ Filename.dir_sep_origin ^ fd')
       ) files
     else if Sys.file_exists fd then
       if is_valid_extensions fd then
@@ -427,6 +356,24 @@ let run () =
       ) (StrMap.empty, StrMap.empty) fileinfo
     in
     m1 := _m1; m2 := _m2;
+    let ignores =
+      try
+        fpf std_formatter "load ignorable extensions from %s@." f;
+        Lexer.line := 1;
+        let chnl = open_in "ignore.db" in
+        let lexbuf = Lexing.from_channel chnl in
+        let r = Parser.is Lexer.token lexbuf in
+        close_in chnl; r
+      with
+      | exn ->
+        fpf err_formatter "error at line %i@." !Lexer.line;
+        raise exn
+    in
+    let ignores = ".svn" :: ".git" :: ignores in
+    let _s3 =
+      List.fold_left (fun ss s -> StrSet.add s ss) StrSet.empty ignores
+    in
+    s3 := _s3;
     if !ext_check then
       begin
         begin
@@ -489,7 +436,8 @@ let run () =
               FileInfos.fold FileInfoMap.add files FileInfoMap.empty |>
               FileInfoMap.iter (fun path fis ->
                 fpf fmt "      <TR>@.";
-                fpf fmt "        <TD colspan='8'> 저장위치 : %s</TD>@." path;
+                fpf fmt "        <TD colspan='8'> 저장위치 : %s</TD>@."
+                  (patch_path path);
                 fpf fmt "      </TR>@.";
                 FileInfos.fold (fun f i ->
                   fpf fmt "      <TR>@.";

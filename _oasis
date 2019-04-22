@@ -8,7 +8,7 @@ Synopsis    : FILT
 Description : FILT
 
 BuildTools   : ocamlbuild
-BuildDepends : unix
+BuildDepends : str,unix
 
 Executable "filt"
   Path: src
