@@ -252,8 +252,8 @@ let anon_fun fd =
     fpf err_formatter "[ERROR] %s is not directory@." fd
 
 let major = "0"
-let minor = "5"
-let misc = "0"
+let minor = "7"
+let misc = "1"
 
 let version =
   major ^ "." ^ minor ^ "." ^ misc
