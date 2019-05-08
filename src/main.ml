@@ -37,16 +37,17 @@ end
 let verbose = ref false
 let has_error_case = ref false
 let html = ref true
+let html2 = ref false
 
 let set_root s =
-    Filename.root := Some s
+  Filename.root := Some s
 
 let set_slash s =
-    Filename.fdesc := (
-      function
-      | "" -> None
-      | s -> Some s
-    ) s
+  Filename.fdesc := (
+    function
+    | "" -> None
+    | s -> Some s
+  ) s
 
 let patch_slash (s:string) : string =
   let s =
@@ -85,6 +86,7 @@ module StrMap = Map.Make(String)
 module StrSet = Set.Make(String)
 
 let m1 = ref StrMap.empty
+let m11 = ref StrMap.empty
 let m2 = ref StrMap.empty
 let s3 = ref StrSet.empty
 
@@ -128,6 +130,14 @@ module FileInfo = struct
       | None ->
         UnkF
         (* raise (UnknownFile base) *)
+
+  let get_func base =
+    let base = String.lowercase_ascii base in
+    let ext = Filename.extension base in
+    let kwd = if ext = "" then base else ext in
+    match StrMap.find_opt kwd !m11 with
+    | None -> ""
+    | Some s -> s
 
   let count_lines_of f =
     (* let lines = ref 0 in 
@@ -195,6 +205,18 @@ module FileInfo = struct
       (t.tm.Unix.tm_year + 1900) (t.tm.Unix.tm_mon + 1) t.tm.Unix.tm_mday;
     fpf fmt "      <TD>%d</TD>@." t.line;
     fpf fmt "      <TD>%s</TD>@." t.typ
+
+  let pp_html2 i fmt t =
+    fpf fmt "      <TD>%s</TD>@." (get_func t.base);
+    fpf fmt "      <TD>%d</TD>@." i;
+    fpf fmt "      <TD>%s</TD>@." t.base;
+    fpf fmt "      <TD>1.0</TD>@.";
+    fpf fmt "      <TD>%d</TD>@." t.size;
+    fpf fmt "      <TD>%s</TD>@." (String.sub t.checksum 0 8);
+    fpf fmt "      <TD>%d.%0.d.%0.d</TD>@."
+      (t.tm.Unix.tm_year + 1900) (t.tm.Unix.tm_mon + 1) t.tm.Unix.tm_mday;
+    fpf fmt "      <TD></TD>@.";
+    fpf fmt "      <TD>%s</TD>@." t.typ
 end
 module FileInfos = Set.Make(FileInfo)
 module FileInfoMap = struct
@@ -253,6 +275,7 @@ let specs = [
   "-t", Arg.Set ext_check,      "    test extensions"; 
   "-c", Arg.Set categorizing,   "    print out (categorized by directory)";
   "-h", Arg.Set html,           "    print out in HTML format";
+  "-h2", Arg.Set html2,         "    print out in HTML format (another format)";
   "-r", Arg.String set_root,    "    set root dir. of path (for print only)";
   "-w", Arg.String set_slash,   "    set file descripter";
 ]
@@ -266,12 +289,11 @@ let is_valid_extensions ?(safe=true) fd =
 module Util = struct
 
   let rec get_ext_files files fd =
+    if StrSet.mem (Filename.basename fd) !s3 then files else
     if Sys.is_directory fd then
       Sys.readdir fd |>
       Array.fold_left (fun files fd' ->
-        match fd' with
-        | ".svn" -> files
-        | fd' -> get_ext_files files (fd ^ Filename.dir_sep_origin ^ fd')
+        get_ext_files files (fd ^ Filename.dir_sep_origin ^ fd')
       ) files
     else if Sys.file_exists fd then
       if is_valid_extensions ~safe:false fd |> not then
@@ -333,7 +355,7 @@ let run () =
   | None -> ()
   | Some start_point ->
     fpf std_formatter "target dir : %s@." start_point;
-    let f = "fileinfo.db" in
+    let f = "/Users/hhkim/workspace/file_list/fileinfo.db" in
     fpf std_formatter "load file info. from %s@." f;
     let fileinfo =
       try
@@ -346,21 +368,26 @@ let run () =
         fpf err_formatter "error at line %i@." !Lexer.line;
         raise exn
     in
-    let _m1, _m2 =
-      List.fold_left (fun (m1, m2) (ext, v, b) ->
+    let _m1, _m11, _m2 =
+      List.fold_left (fun (m1, m11, m2) (ext, v, b, func_opt) ->
         let ext = String.lowercase_ascii ext in
+        let m11 =
+          match func_opt with
+          | None -> m11
+          | Some func -> StrMap.add ext func m11
+        in
         if b then
-          StrMap.add ext v m1, m2
+          StrMap.add ext v m1, m11, m2
         else
-          m1, StrMap.add ext v m2
-      ) (StrMap.empty, StrMap.empty) fileinfo
+          m1, m11, StrMap.add ext v m2
+      ) (StrMap.empty, StrMap.empty, StrMap.empty) fileinfo
     in
-    m1 := _m1; m2 := _m2;
+    m1 := _m1; m11 := _m11; m2 := _m2;
     let ignores =
       try
-        fpf std_formatter "load ignorable extensions from %s@." f;
+        fpf std_formatter "load ignorable extensions from %s@." "ignore.db";
         Lexer.line := 1;
-        let chnl = open_in "ignore.db" in
+        let chnl = open_in "/Users/hhkim/workspace/file_list/ignore.db" in
         let lexbuf = Lexing.from_channel chnl in
         let r = Parser.is Lexer.token lexbuf in
         close_in chnl; r
@@ -415,41 +442,79 @@ let run () =
         in
         if num_of_files > 0 then
           if !html then
-            begin
-              fpf fmt "<!DOCTYPE html>@.";  
-              fpf fmt "<HTML>@.";
-              fpf fmt "  <HEAD>@.";
-              fpf fmt "    <META charset='UTF-8'>@.";
-              fpf fmt "  </HEAD>@.";
-              fpf fmt "  <BODY>@.";
-              fpf fmt "    <TABLE border='1'>@.";
-              fpf fmt "      <TR>@.";
-              fpf fmt "        <TH>순번</TH>@.";
-              fpf fmt "        <TH>파일명</TH>@.";
-              fpf fmt "        <TH>버전</TH>@.";
-              fpf fmt "        <TH>크기</TH>@.";
-              fpf fmt "        <TH>첵섬</TH>@.";
-              fpf fmt "        <TH>생성일자</TH>@.";
-              fpf fmt "        <TH>라인수</TH>@.";
-              fpf fmt "        <TH>기능 설명</TH>@.";
-              fpf fmt "      </TR>@.";
-              FileInfos.fold FileInfoMap.add files FileInfoMap.empty |>
-              FileInfoMap.iter (fun path fis ->
+            if !html2 then
+              begin
+                fpf fmt "<!DOCTYPE html>@.";  
+                fpf fmt "<HTML>@.";
+                fpf fmt "  <HEAD>@.";
+                fpf fmt "    <META charset='UTF-8'>@.";
+                fpf fmt "  </HEAD>@.";
+                fpf fmt "  <BODY>@.";
+                fpf fmt "    <TABLE border='1'>@.";
                 fpf fmt "      <TR>@.";
-                fpf fmt "        <TD colspan='8'> 저장위치 : %s</TD>@."
-                  (patch_path path);
+                fpf fmt "        <TH>구분</TH>@.";
+                fpf fmt "        <TH>순번</TH>@.";
+                fpf fmt "        <TH>파일명</TH>@.";
+                fpf fmt "        <TH>버전</TH>@.";
+                fpf fmt "        <TH>크기</TH>@.";
+                fpf fmt "        <TH>첵섬</TH>@.";
+                fpf fmt "        <TH>생성일</TH>@.";
+                fpf fmt "        <TH>부품번호</TH>@.";
+                fpf fmt "        <TH>기능 설명</TH>@.";
                 fpf fmt "      </TR>@.";
-                FileInfos.fold (fun f i ->
+                FileInfos.fold FileInfoMap.add files FileInfoMap.empty |>
+                FileInfoMap.iter (fun path fis ->
                   fpf fmt "      <TR>@.";
-                  FileInfo.pp_html i fmt f;
+                  fpf fmt "        <TD colspan='9'> 저장위치 : %s</TD>@."
+                    (patch_path path);
                   fpf fmt "      </TR>@.";
-                  i + 1
-                ) fis 1 |> ignore
-              );
-              fpf fmt "    </TABLE>@.";
-              fpf fmt "  </BODY>@.";
-              fpf fmt "</HTML>@."
-            end
+                  FileInfos.fold (fun f i ->
+                    fpf fmt "      <TR>@.";
+                    FileInfo.pp_html2 i fmt f;
+                    fpf fmt "      </TR>@.";
+                    i + 1
+                  ) fis 1 |> ignore
+                );
+                fpf fmt "    </TABLE>@.";
+                fpf fmt "  </BODY>@.";
+                fpf fmt "</HTML>@."
+              end
+            else
+              begin
+                fpf fmt "<!DOCTYPE html>@.";  
+                fpf fmt "<HTML>@.";
+                fpf fmt "  <HEAD>@.";
+                fpf fmt "    <META charset='UTF-8'>@.";
+                fpf fmt "  </HEAD>@.";
+                fpf fmt "  <BODY>@.";
+                fpf fmt "    <TABLE border='1'>@.";
+                fpf fmt "      <TR>@.";
+                fpf fmt "        <TH>순번</TH>@.";
+                fpf fmt "        <TH>파일명</TH>@.";
+                fpf fmt "        <TH>버전</TH>@.";
+                fpf fmt "        <TH>크기</TH>@.";
+                fpf fmt "        <TH>첵섬</TH>@.";
+                fpf fmt "        <TH>생성일자</TH>@.";
+                fpf fmt "        <TH>라인수</TH>@.";
+                fpf fmt "        <TH>기능 설명</TH>@.";
+                fpf fmt "      </TR>@.";
+                FileInfos.fold FileInfoMap.add files FileInfoMap.empty |>
+                FileInfoMap.iter (fun path fis ->
+                  fpf fmt "      <TR>@.";
+                  fpf fmt "        <TD colspan='8'> 저장위치 : %s</TD>@."
+                    (patch_path path);
+                  fpf fmt "      </TR>@.";
+                  FileInfos.fold (fun f i ->
+                    fpf fmt "      <TR>@.";
+                    FileInfo.pp_html i fmt f;
+                    fpf fmt "      </TR>@.";
+                    i + 1
+                  ) fis 1 |> ignore
+                );
+                fpf fmt "    </TABLE>@.";
+                fpf fmt "  </BODY>@.";
+                fpf fmt "</HTML>@."
+              end
           else if !categorizing then
             begin
               fpf fmt "* list of file(s) in %s --- @." start_point;

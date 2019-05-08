@@ -17,6 +17,7 @@ let substr = [^ '"' '\\' '\n']+
 rule token = parse
   | blank     { token lexbuf }
   | newline   { incr line; token lexbuf }
+  | ","       { COMMA }
   | "="       { EQ }
   | "/="       { SEQ }
   | "\""      { clear_buffer ();
