@@ -1,4 +1,4 @@
-# File Infomation Listing Tool v0.3.0 (20190307)
+# File Infomation Listing Tool v0.7.1 (20190508)
 
 ### required opam package
 
@@ -22,8 +22,13 @@
 
  - `./main.{byte|native} ... -f <output_file>` : print out to <output_file>. (default : stdout)
  - `./main.{byte|native} ... -c <output_file>` : print out (categorized by directory, not for -t mode)
-
+ - `./main.{byte|native} ... -h` : print out to html form
+ - `./main.{byte|native} ... -h2` : print out to html form (another format)
+ - `./main.{byte|native} ... -r` : set root directory of path
+ - `./main.{byte|native} ... -w` : set filedescripter
+ 
 ### TODO
 
- - move hard-coded file type list to external file
+ - move hard-coded file type list to external file [DONE]
+ -- use fileinfo.db and ignore.db
  - fix bugs
